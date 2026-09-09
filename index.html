@@ -3054,6 +3054,7 @@ function openReqDetail(id){
   document.getElementById("topEyebrow").textContent = "Module 1";
   document.getElementById("topTitle").textContent = r.title;
   window.scrollTo(0,0);
+  if(typeof pushNavState==="function") pushNavState();
 
   document.getElementById("rdTag").textContent = r.div + " · " + r.tmpl + " template";
   document.getElementById("rdTitle").textContent = r.internalTitle || r.title;
@@ -8433,13 +8434,78 @@ function showRole(role){
   document.getElementById('role-'+role).classList.add('active');
   closeSidebar();
   window.scrollTo(0,0);
+  if(typeof pushNavState==="function") pushNavState();
 }
 function goToGate(){
   document.querySelectorAll('.role-wrap').forEach(function(w){ w.classList.remove('active'); });
   document.getElementById('roleGate').classList.remove('hidden');
   closeSidebar();
   window.scrollTo(0,0);
+  if(typeof pushNavState==="function") pushNavState();
 }
+
+/* ============ Back/forward support ============
+   The app has no real page loads, so the browser Back button previously had
+   nothing to go back to. This tracks role + panel changes as URL hash states
+   and restores them on Back/Forward, so the button in the corner works the
+   way people expect — including jumping back after a cross-role "jump to"
+   link, since those ultimately click the same nav elements this listens for. */
+let suppressNavPush = false;
+function currentActiveRoleId(){
+  const gate = document.getElementById('roleGate');
+  if(gate && !gate.classList.contains('hidden')) return null; // on the role picker
+  const active = document.querySelector('.role-wrap.active');
+  return active ? active.id.replace('role-','') : null;
+}
+function currentActivePanelId(roleId){
+  if(!roleId) return null;
+  const scope = document.getElementById('role-'+roleId);
+  if(!scope) return null;
+  const activePanel = scope.querySelector('.panel.active, .rpanel.active');
+  if(!activePanel) return null;
+  return activePanel.id.replace(/^r?panel-/, '');
+}
+function pushNavState(){
+  if(suppressNavPush) return;
+  const role = currentActiveRoleId();
+  const panel = currentActivePanelId(role);
+  const hash = role ? ('#r='+role+(panel?('&p='+panel):'')) : '#gate';
+  if(location.hash !== hash){
+    try{ history.pushState({role:role,panel:panel}, '', hash); }catch(e){}
+  }
+}
+function restoreFromHash(){
+  const hash = location.hash.replace(/^#/, '');
+  suppressNavPush = true;
+  if(!hash || hash === 'gate'){
+    goToGate();
+  } else {
+    const params = {};
+    hash.split('&').forEach(function(kv){ const parts = kv.split('='); params[parts[0]] = parts[1]; });
+    if(params.r && document.getElementById('role-'+params.r)){
+      showRole(params.r);
+      if(params.p){
+        const nav = document.querySelector('#role-'+params.r+' .nav-item[data-panel="'+params.p+'"], #role-'+params.r+' .rnav-item[data-rpanel="'+params.p+'"]');
+        if(nav) nav.click();
+      }
+    } else {
+      goToGate();
+    }
+  }
+  setTimeout(function(){ suppressNavPush = false; }, 0);
+}
+window.addEventListener('popstate', restoreFromHash);
+// Delegated listener: catches real clicks AND programmatic .click() calls used
+// by "jump to" helper functions elsewhere in the app, since both dispatch the
+// same bubbling click event. Runs after the element's own handler because
+// that one is bound directly to the element, which fires first during bubbling.
+document.addEventListener('click', function(e){
+  const navEl = e.target.closest('.nav-item[data-panel], .rnav-item[data-rpanel], .gate-card, .role-switch-btn');
+  if(navEl) setTimeout(pushNavState, 0);
+}, false);
+// Restore whatever state (if any) is in the URL on first load, e.g. a
+// bookmarked or shared link — otherwise stay on the role picker as before.
+if(location.hash) restoreFromHash();
 
 /* ============ RESPONSIVE: mobile sidebar drawer ============ */
 /* ============ Real, working global search — candidates + requisitions ============ */
